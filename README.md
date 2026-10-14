@@ -49,7 +49,7 @@ The raw downloads are not in the repository; `npm run model:fetch` fetches them 
 
 The methodology page has a "How to cite" section with the current version, and a BibTeX entry:
 
-> Koray Akduman. SF-TRACE 1.0: San Francisco Transit Ridership And Choice Estimator. An open model of transit ridership and travel choices in San Francisco. Version 1.0, 2026. [URL to be added]
+> Koray Akduman. SF-TRACE 1.0: San Francisco Transit Ridership And Choice Estimator. An open model of transit ridership and travel choices in San Francisco. Version 1.0, 2026. https://kakduman.github.io/sf-trace/
 
 ## License
 

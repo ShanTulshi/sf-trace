@@ -693,8 +693,8 @@ export const MODEL_REPO_URL = 'https://github.com/kakduman/sf-trace';
 /** the author footnote on the byline (About and the article) */
 export const MODEL_AUTHOR_NOTE = 'With substantial help from AI systems. Not peer reviewed.';
 export const MODEL_URL = 'https://kakduman.github.io/sf-trace/';
-/** the suggested citation, plain text (the URL is a placeholder until MODEL_URL is set) */
-export const MODEL_CITATION = `${MODEL_AUTHOR}. ${MODEL_NAME} ${MODEL_VERSION}: ${MODEL_LONG_NAME}. ${MODEL_TAGLINE}. Version ${MODEL_VERSION}, ${MODEL_YEAR}. ${MODEL_URL || '[URL to be added]'}`;
+/** the suggested citation, plain text */
+export const MODEL_CITATION = `${MODEL_AUTHOR}. ${MODEL_NAME} ${MODEL_VERSION}: ${MODEL_LONG_NAME}. ${MODEL_TAGLINE}. Version ${MODEL_VERSION}, ${MODEL_YEAR}. ${MODEL_URL}`;
 export const MUNI_FARE = 2.85;
 /**
  * Share of Muni's paying adult riders on monthly or day passes, who pay nothing more per ride: 18.5%

@@ -114,7 +114,7 @@ ${table('commands', 'Pipeline steps.', ['Command', 'Scripts', 'Output'], cmds.ma
 }
 
 export function howToCite(): string {
-  const url = MODEL_URL || '[URL to be added]';
+  const url = MODEL_URL;
   const bib = `@software{sftrace,
   author  = {${MODEL_AUTHOR}},
   title   = {{${MODEL_NAME}}: ${MODEL_LONG_NAME}},

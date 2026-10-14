@@ -79,4 +79,4 @@ The article applies the model to the Portal (Caltrain's extension to the Salesfo
 
 ## How to cite
 
-SF-TRACE 1.0: San Francisco Transit Ridership And Choice Estimator. An open model of transit ridership and travel choices in San Francisco. Version 1.0, 2026. [URL to be added]
+Koray Akduman. SF-TRACE 1.0: San Francisco Transit Ridership And Choice Estimator. An open model of transit ridership and travel choices in San Francisco. Version 1.0, 2026. https://kakduman.github.io/sf-trace/
