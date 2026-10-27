@@ -7,11 +7,11 @@ import './tokens.css';
 import './style.css';
 import type { DayType, Edit, RunResult, Scenario } from '../../shared/beta3/types';
 import { bundleId } from '../../shared/beta3/bundle';
-import { buildModel, DAY_LABEL, DAY_PHRASE, DAY_TYPES, PERIOD_SHORT, PERIOD_HOURS_TEXT, groupKey } from './derive';
+import { buildModel, DAY_LABEL, DAY_PHRASE, DAY_TYPES, PERIOD_SHORT, PERIOD_HOURS_TEXT, groupKey, newLines } from './derive';
 import { CancelledError, Engine } from './engine';
 import { TransitMap } from './map';
 import { addressFor, addStopEdits, dayFromHash, decodeScenario, editGroups, draftRemoveStop, encodeScenario, hasChanges, navFromHash, scenarioFromHash, writeHash } from './scenario';
-import { decodeRunFile, deleteRun, downloadFile, encodeRunFile, findRun, isQuotaError, listRuns, prune, readRun, runFileName, saveRun, setKept, type SavedRun } from './savedRuns';
+import { decodeRunFile, deleteRun, downloadFile, encodeRunFile, findRun, isQuotaError, listRuns, prune, readRun, resultFits, runFileName, saveRun, setKept, type SavedRun } from './savedRuns';
 import { bases, editsKey, quickBases, resultCurrent, resultDay, saveRunMode, saveWeekends, set, state, subscribe, touch, type AppState, type PeriodSel, type Tab } from './state';
 import type { RunMode } from '../../shared/beta3/runmode';
 import type { Ctx } from './ui/common';
@@ -324,12 +324,6 @@ function start(engine: Engine) {
       })
       .finally(refreshSaved);
   }
-  /** a result that fits the model loaded: its arrays are the sizes this bundle's are */
-  const fitsModel = (r: RunResult) =>
-    r.stopOn.length >= engine.base.stopOn.length &&
-    r.stopOff.length === r.stopOn.length &&
-    (['zoneTransitShare', 'zoneJobs45', 'zoneLogsum'] as const).every((k) => r[k].length === engine.base[k].length) &&
-    r.lines.every((l) => Number.isInteger(l.line) && l.line < m.bundle.header.lines.length);
   /**
    * Show a saved run: its scenario in the editor and its result, compared with today's network made
    * in the same run mode. A run from another model bundle can't be compared with this one's today:
@@ -346,7 +340,11 @@ function start(engine: Engine) {
     const scenario: Scenario = { ...s, day, runMode: mode };
     const precise = await engine.baseFor(day, 'precise');
     const base = mode === 'quick' ? await engine.baseFor(day, 'quick') : precise;
-    if (engine.isStale(r) || engine.isStale(base) || !fitsModel(r)) {
+    if (!engine.isStale(r) && !engine.isStale(base) && !resultFits(r, base, { lines: m.bundle.header.lines.length, newLines: newLines(scenario).length })) {
+      ctx.toast('This saved run is damaged, so it can’t be shown.');
+      return null;
+    }
+    if (engine.isStale(r) || engine.isStale(base)) {
       ctx.loadScenario(scenario);
       if (day !== state.day) ctx.setDay(day);
       set({ tab: 'scenario' });
@@ -568,12 +566,12 @@ function start(engine: Engine) {
       if (e) set({ result: e, resultKey: editsKey(s), resultScenario: { ...s, runMode: state.runMode } });
       // else a run of it saved in this browser
       else {
-        const want = JSON.stringify(s.edits);
+        const want = JSON.stringify(s.edits), shown = state.result;
         findRun(editsKey(s), bundleId(engine.bundle.header))
           .then((meta) => meta && readRun(meta.id))
           .then((got) => {
-            // (unless the scenario was changed or run meanwhile)
-            if (got && JSON.stringify(state.scenario.edits) === want && !state.result && state.run.status !== 'running') return showRun(decodeRunFile(got.bytes), `Opened your saved run of “${s.name}”.`);
+            // (unless the scenario was changed, or a result shown, meanwhile)
+            if (got && JSON.stringify(state.scenario.edits) === want && state.result === shown && state.run.status !== 'running') return showRun(decodeRunFile(got.bytes), `Opened your saved run of “${s.name}”.`);
           })
           .catch(() => {});
       }

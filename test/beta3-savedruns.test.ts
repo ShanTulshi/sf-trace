@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { decodeBundle, encodeBundle } from '../shared/beta3/bundle';
 import { decodeResult, encodeResult } from '../shared/beta3/results';
 import { TPERIODS, type RunResult, type Scenario, type TrafficResult } from '../shared/beta3/types';
-import { decodeRunFile, encodeRunFile, RETENTION, runFileName, toEvict, type SavedRunMeta } from '../client/beta3/savedRuns';
+import { gzipSync } from 'fflate';
+import { decodeRunFile, encodeRunFile, gunzipCapped, hasShape, resultFits, RETENTION, runFileName, toEvict, type SavedRunMeta } from '../client/beta3/savedRuns';
 
 const per = <T>(f: (i: number) => T) => Object.fromEntries(TPERIODS.map((p, i) => [p, f(i)])) as Record<(typeof TPERIODS)[number], T>;
 const traffic: TrafficResult = {
@@ -13,8 +14,8 @@ const traffic: TrafficResult = {
   gaps: per(() => 1e-4),
   iterations: per(() => 3),
   vehicles: per(() => 100),
-  summary: { vmt: per(() => 1), vht: per(() => 2), delay: per(() => 3), speed: { freeway: per(() => 50) }, vehicles: per(() => 100), peninsula: { 'US-101 N': { vmt: per(() => 4), vht: per(() => 5) } } },
-  base: { vmt: per(() => 1), vht: per(() => 2), delay: per(() => 3), speed: {}, vehicles: per(() => 100) },
+  summary: { vmt: per(() => 1), vht: per(() => 2), delay: per(() => 3), speed: { all: per(() => 30), freeway: per(() => 50), arterial: per(() => 20) }, vehicles: per(() => 100), peninsula: { 'US-101 N': { vmt: per(() => 4), vht: per(() => 5) } } },
+  base: { vmt: per(() => 1), vht: per(() => 2), delay: per(() => 3), speed: { all: per(() => 31), freeway: per(() => 51), arterial: per(() => 21) }, vehicles: per(() => 100) },
   trips: [{ name: 'Mission to Downtown', period: 'AM', base: 12, scenario: 11 }],
   convergence: [0.1, 0.01],
   loadings: 4,
@@ -99,6 +100,16 @@ describe('beta3 saved runs: the file', () => {
     expect(() => decodeRunFile(tamper((h) => (h.result.summary['<x>'] = 1)))).toThrow(/damaged/);
   });
 
+  it('stops unpacking a small file that unpacks to too much', () => {
+    // 200 MB of zeros packs to about 200 KB
+    const bomb = gzipSync(new Uint8Array(200 * 2 ** 20), { level: 9 });
+    expect(bomb.byteLength).toBeLessThan(400_000);
+    expect(() => gunzipCapped(bomb, 2 ** 20)).toThrow(/too large/);
+    expect(() => decodeRunFile(bomb)).toThrow(/not a saved SF-TRACE run/);
+    const ok = new Uint8Array(100_000).map((_, i) => i % 251);
+    expect(gunzipCapped(gzipSync(ok), 2 ** 20)).toEqual(ok);
+  });
+
   it('names files after the scenario, day, and run mode', () => {
     expect(runFileName(scenario)).toBe('free-muni-wkd-quick.sftrace');
     expect(runFileName({ name: '  ¡¡¡  ', edits: [], day: 'sat' })).toBe('scenario-sat-precise.sftrace');
@@ -122,5 +133,50 @@ describe('beta3 saved runs: retention', () => {
     const kept = Array.from({ length: 30 }, (_, i) => meta(`k${i}`, 365 + i, true));
     const recent = Array.from({ length: RETENTION.recent }, (_, i) => meta(`r${i}`, i));
     expect(toEvict([...kept, ...recent], now)).toEqual([]);
+  });
+});
+
+const MODEL = 'client/beta3/model';
+const haveBases = fs.existsSync(`${MODEL}/base.bin.gz`) && fs.existsSync(`${MODEL}/base-quick.bin.gz`);
+describe.skipIf(!haveBases)('beta3 saved runs: results the panels can show', () => {
+  const load = (f: string) => decodeResult(zlib.gunzipSync(fs.readFileSync(`${MODEL}/${f}`)));
+  const precise = load('base.bin.gz'), quick = load('base-quick.bin.gz');
+  const model = { lines: Math.max(...precise.lines.map((l) => l.line)) + 1, newLines: 0 };
+  /** a saved copy of a result, changed by f */
+  const saved = (r: RunResult, f: (x: RunResult & Record<string, unknown>) => void = () => {}) => {
+    const x = decodeRunFile(encodeRunFile({ scenario, result: r, savedAt: 1 })).result;
+    f(x as RunResult & Record<string, unknown>);
+    return x;
+  };
+
+  it('takes real results, made in either run mode', () => {
+    expect(resultFits(saved(quick), quick, model)).toBe(true);
+    expect(resultFits(saved(precise), precise, model)).toBe(true);
+    expect(hasShape(precise.summary, quick.summary)).toBe(true);
+    expect(resultFits(saved({ ...quick, traffic }), quick, model)).toBe(true);
+  });
+
+  it('turns away a result missing what the panels read', () => {
+    expect(resultFits(saved(quick, (x) => delete (x.summary as unknown as Record<string, unknown>).boardings), quick, model)).toBe(false);
+    expect(resultFits(saved(quick, (x) => ((x.summary as unknown as Record<string, unknown>).transitTrips = 'many')), quick, model)).toBe(false);
+    expect(resultFits(saved(quick, (x) => delete (x.lines[3] as unknown as Record<string, unknown>).boardings), quick, model)).toBe(false);
+    expect(resultFits(saved(quick, (x) => (x.zoneLogsum = new Float32Array(3))), quick, model)).toBe(false);
+    expect(resultFits(saved(quick, (x) => (x.lines[0].line = model.lines)), quick, model)).toBe(false);
+    // a scenario's own lines are -1 - k for its k-th new line
+    expect(resultFits(saved(quick, (x) => (x.lines[0].line = -1)), quick, model)).toBe(false);
+    expect(resultFits(saved(quick, (x) => (x.lines[0].line = -1)), quick, { ...model, newLines: 1 })).toBe(true);
+  });
+
+  it('turns away traffic the driving panels can’t show', () => {
+    const bad = (f: (t: TrafficResult & Record<string, unknown>) => void) => {
+      const t = structuredClone(traffic) as TrafficResult & Record<string, unknown>;
+      f(t);
+      return resultFits(saved({ ...quick, traffic: t }), quick, model);
+    };
+    expect(bad(() => {})).toBe(true);
+    expect(bad((t) => (t.trips[0].period = 'XX' as never))).toBe(false);
+    expect(bad((t) => delete (t.summary.speed as Record<string, unknown>).arterial)).toBe(false);
+    expect(bad((t) => ((t.base.peninsula = { 'I-280 S': {} as never }), void 0))).toBe(false);
+    expect(bad((t) => (t.corridorTrips = [{ name: 'x', period: 'AM', base: 1 } as never]))).toBe(false);
   });
 });
